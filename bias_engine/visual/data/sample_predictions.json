@@ -1,0 +1,182 @@
+[
+  {
+    "symbol": "STAR50",
+    "as_of": "2026-05-11",
+    "horizon": "D1",
+    "bias_score": 0.32,
+    "label": "bullish",
+    "confidence": 0.58,
+    "p_up": 0.52,
+    "p_neutral": 0.28,
+    "p_down": 0.20,
+    "model_version": "rule_model_v1",
+    "top_positive_factors": [
+      {"name": "return_5d", "value": 0.45, "contribution": 0.09},
+      {"name": "ndx_prev_session_return", "value": 0.31, "contribution": 0.047},
+      {"name": "volume_zscore", "value": 0.22, "contribution": 0.022}
+    ],
+    "top_negative_factors": [
+      {"name": "realized_vol_20d", "value": -0.35, "contribution": -0.035},
+      {"name": "drawdown_from_60d_high", "value": -0.18, "contribution": -0.018}
+    ]
+  },
+  {
+    "symbol": "STAR50",
+    "as_of": "2026-05-11",
+    "horizon": "W1",
+    "bias_score": -0.18,
+    "label": "neutral",
+    "confidence": 0.42,
+    "p_up": 0.28,
+    "p_neutral": 0.38,
+    "p_down": 0.34,
+    "model_version": "rule_model_v1",
+    "top_positive_factors": [
+      {"name": "ndx_prev_session_return", "value": 0.31, "contribution": 0.031},
+      {"name": "usd_cnh_change", "value": 0.15, "contribution": 0.015}
+    ],
+    "top_negative_factors": [
+      {"name": "ema_slope_20", "value": -0.42, "contribution": -0.063},
+      {"name": "drawdown_from_60d_high", "value": -0.25, "contribution": -0.025},
+      {"name": "realized_vol_20d", "value": -0.20, "contribution": -0.020}
+    ]
+  },
+  {
+    "symbol": "STAR50",
+    "as_of": "2026-05-11",
+    "horizon": "M1",
+    "bias_score": -0.05,
+    "label": "neutral",
+    "confidence": 0.31,
+    "p_up": 0.30,
+    "p_neutral": 0.38,
+    "p_down": 0.32,
+    "model_version": "rule_model_v1",
+    "top_positive_factors": [
+      {"name": "relative_strength_vs_ndx", "value": 0.12, "contribution": 0.018}
+    ],
+    "top_negative_factors": [
+      {"name": "ema_slope_60", "value": -0.28, "contribution": -0.042},
+      {"name": "ma_stack_score", "value": -0.15, "contribution": -0.023}
+    ]
+  },
+  {
+    "symbol": "HSI",
+    "as_of": "2026-05-11",
+    "horizon": "D1",
+    "bias_score": -0.12,
+    "label": "neutral",
+    "confidence": 0.39,
+    "p_up": 0.30,
+    "p_neutral": 0.36,
+    "p_down": 0.34,
+    "model_version": "rule_model_v1",
+    "top_positive_factors": [
+      {"name": "ndx_prev_session_return", "value": 0.31, "contribution": 0.047}
+    ],
+    "top_negative_factors": [
+      {"name": "rsi_14", "value": -0.28, "contribution": -0.042},
+      {"name": "usd_cnh_change", "value": -0.22, "contribution": -0.022}
+    ]
+  },
+  {
+    "symbol": "HSI",
+    "as_of": "2026-05-11",
+    "horizon": "W1",
+    "bias_score": 0.27,
+    "label": "neutral",
+    "confidence": 0.51,
+    "p_up": 0.46,
+    "p_neutral": 0.30,
+    "p_down": 0.24,
+    "model_version": "rule_model_v1",
+    "top_positive_factors": [
+      {"name": "ema_slope_20", "value": 0.38, "contribution": 0.057},
+      {"name": "relative_strength_vs_ndx", "value": 0.25, "contribution": 0.025},
+      {"name": "usd_cnh_change", "value": 0.18, "contribution": 0.018}
+    ],
+    "top_negative_factors": [
+      {"name": "realized_vol_20d", "value": -0.30, "contribution": -0.030}
+    ]
+  },
+  {
+    "symbol": "HSI",
+    "as_of": "2026-05-11",
+    "horizon": "M1",
+    "bias_score": 0.35,
+    "label": "bullish",
+    "confidence": 0.55,
+    "p_up": 0.54,
+    "p_neutral": 0.26,
+    "p_down": 0.20,
+    "model_version": "rule_model_v1",
+    "top_positive_factors": [
+      {"name": "relative_strength_vs_ndx", "value": 0.42, "contribution": 0.063},
+      {"name": "ma_stack_score", "value": 0.30, "contribution": 0.045},
+      {"name": "ema_slope_60", "value": 0.22, "contribution": 0.033}
+    ],
+    "top_negative_factors": [
+      {"name": "realized_vol_20d", "value": -0.15, "contribution": -0.015}
+    ]
+  },
+  {
+    "symbol": "NDX",
+    "as_of": "2026-05-11",
+    "horizon": "D1",
+    "bias_score": 0.55,
+    "label": "bullish",
+    "confidence": 0.68,
+    "p_up": 0.64,
+    "p_neutral": 0.22,
+    "p_down": 0.14,
+    "model_version": "rule_model_v1",
+    "top_positive_factors": [
+      {"name": "return_5d", "value": 0.62, "contribution": 0.124},
+      {"name": "volume_zscore", "value": 0.45, "contribution": 0.045},
+      {"name": "ema_slope_20", "value": 0.38, "contribution": 0.038}
+    ],
+    "top_negative_factors": [
+      {"name": "atr_pct", "value": -0.20, "contribution": -0.020}
+    ]
+  },
+  {
+    "symbol": "NDX",
+    "as_of": "2026-05-11",
+    "horizon": "W1",
+    "bias_score": 0.38,
+    "label": "bullish",
+    "confidence": 0.60,
+    "p_up": 0.56,
+    "p_neutral": 0.26,
+    "p_down": 0.18,
+    "model_version": "rule_model_v1",
+    "top_positive_factors": [
+      {"name": "return_20d", "value": 0.48, "contribution": 0.072},
+      {"name": "ema_slope_20", "value": 0.40, "contribution": 0.060},
+      {"name": "ma_stack_score", "value": 0.35, "contribution": 0.035}
+    ],
+    "top_negative_factors": [
+      {"name": "realized_vol_20d", "value": -0.25, "contribution": -0.025}
+    ]
+  },
+  {
+    "symbol": "NDX",
+    "as_of": "2026-05-11",
+    "horizon": "M1",
+    "bias_score": 0.22,
+    "label": "neutral",
+    "confidence": 0.45,
+    "p_up": 0.42,
+    "p_neutral": 0.32,
+    "p_down": 0.26,
+    "model_version": "rule_model_v1",
+    "top_positive_factors": [
+      {"name": "ema_slope_60", "value": 0.30, "contribution": 0.045},
+      {"name": "relative_strength_vs_ndx", "value": 0.20, "contribution": 0.030}
+    ],
+    "top_negative_factors": [
+      {"name": "drawdown_from_60d_high", "value": -0.15, "contribution": -0.015},
+      {"name": "realized_vol_20d", "value": -0.12, "contribution": -0.012}
+    ]
+  }
+]

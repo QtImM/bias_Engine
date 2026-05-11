@@ -1,0 +1,17 @@
+[
+  {"factor_name": "atr_pct", "rows": 2409, "coverage": 1.0, "extreme_share": 0.0},
+  {"factor_name": "bollinger_z", "rows": 2409, "coverage": 1.0, "extreme_share": 0.004},
+  {"factor_name": "drawdown_from_60d_high", "rows": 2409, "coverage": 1.0, "extreme_share": 0.0},
+  {"factor_name": "ema_slope_20", "rows": 2409, "coverage": 1.0, "extreme_share": 0.0},
+  {"factor_name": "ema_slope_60", "rows": 2409, "coverage": 1.0, "extreme_share": 0.0},
+  {"factor_name": "ma_stack_score", "rows": 2409, "coverage": 1.0, "extreme_share": 0.0},
+  {"factor_name": "ndx_prev_session_return", "rows": 1606, "coverage": 1.0, "extreme_share": 0.0},
+  {"factor_name": "realized_vol_20d", "rows": 2409, "coverage": 1.0, "extreme_share": 0.008},
+  {"factor_name": "relative_strength_vs_ndx", "rows": 1606, "coverage": 1.0, "extreme_share": 0.0},
+  {"factor_name": "return_20d", "rows": 2409, "coverage": 1.0, "extreme_share": 0.0},
+  {"factor_name": "return_5d", "rows": 2409, "coverage": 1.0, "extreme_share": 0.0},
+  {"factor_name": "return_60d", "rows": 2409, "coverage": 1.0, "extreme_share": 0.0},
+  {"factor_name": "rsi_14", "rows": 2409, "coverage": 1.0, "extreme_share": 0.0},
+  {"factor_name": "usd_cnh_change", "rows": 1606, "coverage": 0.98, "extreme_share": 0.0},
+  {"factor_name": "volume_zscore", "rows": 2409, "coverage": 1.0, "extreme_share": 0.0}
+]
