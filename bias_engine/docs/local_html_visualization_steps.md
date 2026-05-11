@@ -2,15 +2,17 @@
 
 ## 目标
 
-做一个可以直接在本地打开的 `HTML` 可视化页面，用来展示 `bias_engine` 生成的多周期 bias 结果。它不是普通后台表格，而是一个“市场气象台 / Bias Control Room”：让用户快速看见三个标的在 `D1 / W1 / M1` 上的方向冲突、置信度、因子驱动和数据新鲜度。
+做一个可以直接在本地打开的 HTML 可视化页面，用来展示 `bias_engine` 生成的多周期 bias 结果。它不是普通后台表格，而是一个“市场气象台 / Bias Control Room”：让用户快速看见三个标的在 `D1 / W1 / M1` 上的方向冲突、置信度、因子驱动和数据新鲜度。
 
-页面第一版只读本地静态数据，不做后端服务。推荐输出文件：
+页面第一版只读本地静态 JSON，不做后端服务。推荐输出文件：
 
 ```text
 bias_engine/visual/index.html
 bias_engine/visual/assets/style.css
 bias_engine/visual/assets/app.js
-bias_engine/visual/data/sample_predictions.json
+bias_engine/visual/data/predictions.json
+bias_engine/visual/data/factor_quality.json
+bias_engine/visual/data/factor_latest.json
 ```
 
 ## 设计方向
@@ -30,7 +32,7 @@ bias_engine/visual/data/sample_predictions.json
 多周期冲突用张力线表达
 ```
 
-不要做成默认 Bootstrap dashboard，也不要做白底蓝按钮的后台系统。页面应该像一个研究员收盘后打开的“市场偏见雷达”，克制、锋利、有一点仪器感。
+不要做成默认 Bootstrap dashboard，也不要做白底蓝按钮的后台系统。页面应该像研究员收盘后打开的“市场偏见雷达”，克制、锋利、有仪器感。
 
 推荐字体：
 
@@ -74,6 +76,8 @@ feature_set_version
 数据新鲜度状态
 ```
 
+注意：当前 `predictions.parquet` 还没有原生 `feature_set_version` 字段。第一版导出脚本需要补一个稳定默认值，例如 `feature_set_v1`；等后续模型注册系统完善后，再改为读取真实字段。
+
 设计要求：
 
 ```text
@@ -86,7 +90,7 @@ feature_set_version
 
 ```text
 Bias Engine / Market Regime Console
-As of 2026-05-11 · rule_model_v1 · local research mode
+As of 2026-05-11 · rule_model_v1 · feature_set_v1 · local research mode
 ```
 
 ### 2. Bias Matrix 主视图
@@ -107,11 +111,11 @@ As of 2026-05-11 · rule_model_v1 · local research mode
 视觉规则：
 
 ```text
-bias_score > 0.3：绿色
-bias_score < -0.3：红色
+bias_score >= 0.3：绿色
+bias_score <= -0.3：红色
 其他：灰色
 confidence 越高，单元格发光越强
-D1/W1/M1 方向冲突时，在行尾显示 Conflict 标签
+D1 / W1 / M1 方向冲突时，在行尾显示 Conflict 标签
 ```
 
 重点：不要只做表格。每个单元格应该像一块小仪表盘，有数字、有方向、有置信度进度线。
@@ -200,7 +204,7 @@ extreme_share > 0.05 显示黄色
 
 ### Step 1：从 Parquet 导出 JSON
 
-新增一个简单导出脚本：
+新增一个导出脚本：
 
 ```text
 bias_engine/scripts/export_visual_data.py
@@ -224,6 +228,53 @@ bias_engine/visual/data/factor_latest.json
 
 第一版页面只依赖 JSON，避免浏览器直接读 Parquet。
 
+导出脚本需要做的具体事情：
+
+```text
+1. 创建 visual/data 目录。
+2. 读取 predictions.parquet，如果缺少 feature_set_version，则补 feature_set_v1。
+3. 把 top_positive_factors / top_negative_factors 这类 list/dict 字段转换成 JSON 可序列化对象。
+4. 读取 factor_quality.parquet，只保留页面需要的 factor_name / rows / coverage / extreme_share 等字段。
+5. 从 factor_values.parquet 按 symbol + factor_name 取最新一条，导出 factor_latest.json。
+6. 如果某个 parquet 文件不存在，脚本要输出清晰错误，提示先运行 python run_pipeline.py --step all --start 2023-01-01。
+```
+
+导出脚本伪代码：
+
+```python
+from pathlib import Path
+import pandas as pd
+
+ROOT = Path(__file__).resolve().parents[1]
+DATA = ROOT / "data"
+OUT = ROOT / "visual" / "data"
+OUT.mkdir(parents=True, exist_ok=True)
+
+predictions_path = DATA / "predictions" / "predictions.parquet"
+quality_path = DATA / "features" / "factor_quality.parquet"
+factors_path = DATA / "features" / "factor_values.parquet"
+
+for path in [predictions_path, quality_path, factors_path]:
+    if not path.exists():
+        raise FileNotFoundError(
+            f"{path} does not exist. Run: python run_pipeline.py --step all --start 2023-01-01"
+        )
+
+predictions = pd.read_parquet(predictions_path)
+if "feature_set_version" not in predictions.columns:
+    predictions["feature_set_version"] = "feature_set_v1"
+predictions.to_json(OUT / "predictions.json", orient="records", force_ascii=False, indent=2)
+
+quality = pd.read_parquet(quality_path)
+quality_cols = [c for c in ["factor_name", "rows", "coverage", "extreme_share"] if c in quality.columns]
+quality[quality_cols].to_json(OUT / "factor_quality.json", orient="records", force_ascii=False, indent=2)
+
+factors = pd.read_parquet(factors_path)
+factors["ts"] = pd.to_datetime(factors["ts"])
+latest = factors.sort_values("ts").groupby(["symbol", "factor_name"], as_index=False).tail(1)
+latest.to_json(OUT / "factor_latest.json", orient="records", force_ascii=False, indent=2)
+```
+
 ### Step 2：定义 JSON 结构
 
 `predictions.json`：
@@ -238,9 +289,10 @@ bias_engine/visual/data/factor_latest.json
     "label": "bullish",
     "confidence": 0.72,
     "p_up": 0.82,
-    "p_neutral": 0.10,
+    "p_neutral": 0.1,
     "p_down": 0.08,
     "model_version": "rule_model_v1",
+    "feature_set_version": "feature_set_v1",
     "top_positive_factors": [],
     "top_negative_factors": []
   }
@@ -260,6 +312,22 @@ bias_engine/visual/data/factor_latest.json
 ]
 ```
 
+`factor_latest.json`：
+
+```json
+[
+  {
+    "symbol": "NDX",
+    "factor_name": "return_20d",
+    "factor_version": "1.0.0",
+    "value": 0.12,
+    "ts": "2026-05-11T00:00:00.000",
+    "available_at": "2026-05-11T00:00:00.000",
+    "quality_score": 1.0
+  }
+]
+```
+
 ## HTML 实现步骤
 
 ### Step 1：创建静态页面目录
@@ -273,6 +341,7 @@ bias_engine/visual/
   data/
     predictions.json
     factor_quality.json
+    factor_latest.json
 ```
 
 ### Step 2：写 `index.html` 骨架
@@ -294,9 +363,11 @@ bias_engine/visual/
 
 ```text
 不要引入大型 UI 框架
-可以用原生 HTML/CSS/JS
+可以用原生 HTML / CSS / JS
 可以用 Plotly，但第一版不必须
-页面应支持 file:// 打开；如果 fetch 本地 JSON 被浏览器拦截，则使用 python 静态服务器
+第一版以 python 静态服务器为准，不承诺 file:// 直接打开
+原因：多数浏览器会拦截 file:// 页面里的 fetch("./data/predictions.json")
+如果一定要支持 file://，需要在 app.js 里内置 fallback demoData，但验收时仍以真实 JSON + http server 为准
 ```
 
 ### Step 3：写 CSS 视觉系统
@@ -334,12 +405,13 @@ bullish / bearish / neutral 使用明确 class
 
 ```text
 加载 predictions.json
+加载 factor_quality.json
+加载 factor_latest.json
 按 symbol + horizon 分组
 渲染 Bias Matrix
 计算多周期是否冲突
 渲染 conflict cards
 渲染 top factor contribution
-加载 factor_quality.json
 渲染质量卡片
 ```
 
@@ -352,7 +424,7 @@ function getBiasClass(label) {}
 function renderTopbar(predictions) {}
 function renderBiasMatrix(grouped) {}
 function renderConflictBoard(grouped) {}
-function renderFactorBoard(grouped) {}
+function renderFactorBoard(grouped, factorLatest) {}
 function renderQualityBoard(quality) {}
 ```
 
@@ -396,26 +468,26 @@ python -m http.server 8080 -d visual
 http://localhost:8080
 ```
 
-如果不想启动服务，也可以直接打开：
+不推荐直接用 `file://` 打开。如果临时直接打开：
 
 ```text
 bias_engine/visual/index.html
 ```
 
-但部分浏览器会限制 `fetch("./data/predictions.json")`，所以本地 server 更稳。
+页面可能因为浏览器安全策略无法读取 `./data/predictions.json`。正式验收统一使用 `http://localhost:8080`。
 
 ## 验收标准
 
 第一版完成后应满足：
 
 ```text
-页面能在本地打开
+页面能通过 http://localhost:8080 打开
 显示 STAR50 / HSI / NDX
 每个标的都有 D1 / W1 / M1
 颜色能区分 bullish / bearish / neutral
 confidence 有视觉强弱
 能看出多周期方向冲突
-能展示数据 as_of 日期和模型版本
+能展示 as_of 日期、model_version 和 feature_set_version
 数据文件来自 pipeline 输出，不手写假数据
 移动端宽度下不崩，至少可以纵向浏览
 ```
