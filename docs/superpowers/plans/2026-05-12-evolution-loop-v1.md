@@ -169,7 +169,89 @@ AI 不负责主观判断某个建议好不好。
 是否有效只看严格量化验证。
 ```
 
-### 4.1 Candidate Experiment：候选实验
+### 4.1 AI 在自进化中的角色边界
+
+AI 应该参与“生成实验”和“解释证据”，但不参与“主观裁决”。
+
+本项目里的自进化流程应该是：
+
+```text
+AI 提出可验证假设
+回测验证假设
+规则判断是否满足晋级条件
+人类批准关键变更
+系统记录实验经验
+```
+
+AI 可以做：
+
+```text
+1. 读取 `evolution_candidates.json`。
+2. 读取 `evolution_report.md`。
+3. 将数据质量问题转成候选实验。
+4. 把模糊想法整理成结构化实验协议。
+5. 解释回测报告中的指标变化。
+6. 总结实验历史和失败原因。
+7. 帮助生成下一轮 `config/experiments/<date>-exp-xxx.yaml`。
+8. 帮助检查候选实验是否缺少 point-in-time 约束。
+9. 帮助把候选实验拆成可执行任务。
+```
+
+AI 不可以做：
+
+```text
+1. 不可以凭主观判断 promote challenger。
+2. 不可以跳过 walk-forward / 回测。
+3. 不可以忽略 `available_at <= prediction_time`。
+4. 不可以把 labels 加入预测特征。
+5. 不可以直接修改 champion 配置。
+6. 不可以自动禁用因子。
+7. 不可以把候选实验描述成已验证结论。
+8. 不可以用“看起来合理”替代量化指标。
+9. 不可以在没有版本记录的情况下覆盖模型或因子配置。
+```
+
+因此，AI 输出的每个建议都必须满足：
+
+```text
+它是 hypothesis，不是 conclusion。
+它必须能被 walk-forward / backtest 检验。
+它必须显式声明 point-in-time 约束。
+它必须声明 challenger_vs_champion 比较方式。
+它必须留下机器可读记录，方便未来复盘。
+```
+
+如果 AI 参与解释回测结果，它只能基于已有指标做解释。例如：
+
+```text
+D1 directional_hit_rate 提升 2.1%
+W1 directional_hit_rate 下降 0.4%
+M1 directional_hit_rate 下降 3.8%
+```
+
+AI 可以解释为：
+
+```text
+这个实验可能只适合作为 D1-only challenger。
+```
+
+但最终状态必须由规则决定：
+
+```text
+if M1_delta < -material_degradation:
+    status = "hold"
+```
+
+一句话原则：
+
+```text
+AI 负责提出问题和整理证据。
+回测负责回答问题。
+规则负责裁决。
+人类负责批准关键变更。
+```
+
+### 4.2 Candidate Experiment：候选实验
 
 候选实验是“建议下一轮测试的改动”，不是已经应用的改动。
 
@@ -247,7 +329,7 @@ ai_readable_summary：便于复制给 AI 阅读的摘要
 }
 ```
 
-### 4.2 Promotion Decision：晋级判断
+### 4.3 Promotion Decision：晋级判断
 
 晋级判断用于评估 challenger 是否可以替换 champion。
 
@@ -262,7 +344,7 @@ needs_more_data：数据或指标不足
 
 第一版只输出判断，不自动执行晋级。
 
-### 4.3 Evolution Report：进化报告
+### 4.4 Evolution Report：进化报告
 
 进化报告是给用户 review 的主要产物。它同时要服务两个读者：
 
