@@ -1,0 +1,31 @@
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local market data and model artifacts
+bias_engine/data/**/*.parquet
+bias_engine/data/**/*.csv
+bias_engine/data/**/*.jsonl
+bias_engine/db/*.duckdb
+bias_engine/db/*.db
+bias_engine/models/
+bias_engine/artifacts/
+
+# Keep directory placeholders
+!bias_engine/data/**/.gitkeep
+!bias_engine/db/.gitkeep
+
+# Local environment files
+.env
+.env.*
+!.env.example
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

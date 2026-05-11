@@ -1,0 +1,30 @@
+# Data source configuration
+# Phase 1: AKShare + yfinance (both free, no API key needed)
+
+sources:
+  akshare:
+    enabled: true
+    description: "Free Chinese market data, good for A-share indices"
+    rate_limit_seconds: 0.5
+
+  yfinance:
+    enabled: true
+    description: "Free global market data via Yahoo Finance"
+    rate_limit_seconds: 1.0
+
+storage:
+  # Parquet for raw/normalized bars
+  raw_dir: "data/raw"
+  normalized_dir: "data/normalized"
+  # DuckDB for metadata + factor values + predictions
+  duckdb_path: "db/bias_engine.duckdb"
+  # Parquet for features, labels, predictions
+  features_dir: "data/features"
+  labels_dir: "data/labels"
+  predictions_dir: "data/predictions"
+
+calendar:
+  # Trading calendars per market
+  CN: "SSE"       # Shanghai Stock Exchange
+  HK: "HKEX"      # Hong Kong Exchange
+  US: "NYSE"      # New York Stock Exchange

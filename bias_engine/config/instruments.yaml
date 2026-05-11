@@ -1,0 +1,33 @@
+instruments:
+  - symbol: STAR50
+    name: SSE STAR 50 Index
+    market: CN
+    timezone: Asia/Shanghai
+    currency: CNY
+    primary_provider: akshare
+    provider_symbols:
+      akshare: "000688"        # 科创50指数
+      yfinance: "^000688.SS"   # Yahoo Finance 代理
+    active: true
+
+  - symbol: HSI
+    name: Hang Seng Index
+    market: HK
+    timezone: Asia/Hong_Kong
+    currency: HKD
+    primary_provider: yfinance
+    provider_symbols:
+      akshare: "HSI"
+      yfinance: "^HSI"
+    active: true
+
+  - symbol: NDX
+    name: Nasdaq-100 Index
+    market: US
+    timezone: America/New_York
+    currency: USD
+    primary_provider: yfinance
+    provider_symbols:
+      yfinance: "^NDX"
+      etf_proxy: "QQQ"
+    active: true

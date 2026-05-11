@@ -1,0 +1,142 @@
+# Factor Configuration
+# Each factor declares: id, class_path, enabled, params, symbols, horizons
+# To disable a factor, set enabled: false
+
+factors:
+  # ── Trend Factors ──
+  - id: return_5d
+    class_path: factors.trend.returns.ReturnFactor
+    enabled: true
+    params:
+      window: 5
+    symbols: ["STAR50", "HSI", "NDX"]
+    horizons: ["D1"]
+
+  - id: return_20d
+    class_path: factors.trend.returns.ReturnFactor
+    enabled: true
+    params:
+      window: 20
+    symbols: ["STAR50", "HSI", "NDX"]
+    horizons: ["D1", "W1"]
+
+  - id: return_60d
+    class_path: factors.trend.returns.ReturnFactor
+    enabled: true
+    params:
+      window: 60
+    symbols: ["STAR50", "HSI", "NDX"]
+    horizons: ["W1", "M1"]
+
+  - id: ema_slope_20
+    class_path: factors.trend.ema_slope.EmaSlopeFactor
+    enabled: true
+    params:
+      window: 20
+      diff_period: 5
+    symbols: ["STAR50", "HSI", "NDX"]
+    horizons: ["D1", "W1"]
+
+  - id: ema_slope_60
+    class_path: factors.trend.ema_slope.EmaSlopeFactor
+    enabled: true
+    params:
+      window: 60
+      diff_period: 10
+    symbols: ["STAR50", "HSI", "NDX"]
+    horizons: ["W1", "M1"]
+
+  - id: ma_stack_score
+    class_path: factors.trend.ma_stack.MaStackScoreFactor
+    enabled: true
+    params:
+      windows: [5, 20, 60, 120]
+    symbols: ["STAR50", "HSI", "NDX"]
+    horizons: ["W1", "M1"]
+
+  - id: drawdown_from_60d_high
+    class_path: factors.trend.drawdown.DrawdownFactor
+    enabled: true
+    params:
+      window: 60
+    symbols: ["STAR50", "HSI", "NDX"]
+    horizons: ["D1", "W1"]
+
+  # ── Mean Reversion Factors ──
+  - id: rsi_14
+    class_path: factors.mean_reversion.rsi.RsiFactor
+    enabled: true
+    params:
+      window: 14
+    symbols: ["STAR50", "HSI", "NDX"]
+    horizons: ["D1"]
+
+  - id: bollinger_z
+    class_path: factors.mean_reversion.bollinger.BollingerZFactor
+    enabled: true
+    params:
+      window: 20
+      num_std: 2.0
+    symbols: ["STAR50", "HSI", "NDX"]
+    horizons: ["D1"]
+
+  # ── Volatility Factors ──
+  - id: realized_vol_20d
+    class_path: factors.volatility.realized_vol.RealizedVolFactor
+    enabled: true
+    params:
+      window: 20
+    symbols: ["STAR50", "HSI", "NDX"]
+    horizons: ["D1", "W1", "M1"]
+
+  - id: atr_pct
+    class_path: factors.volatility.atr.AtrPctFactor
+    enabled: true
+    params:
+      window: 14
+    symbols: ["STAR50", "HSI", "NDX"]
+    horizons: ["D1", "W1"]
+
+  # ── Volume Factors ──
+  - id: volume_zscore
+    class_path: factors.volume.volume_zscore.VolumeZscoreFactor
+    enabled: true
+    params:
+      window: 20
+    symbols: ["STAR50", "HSI", "NDX"]
+    horizons: ["D1"]
+
+  # ── Cross-Market Factors ──
+  - id: ndx_prev_session_return
+    class_path: factors.cross_market.ndx_lead.NdxLeadFactor
+    enabled: true
+    params:
+      lag_days: 1
+    symbols: ["STAR50", "HSI"]
+    horizons: ["D1", "W1"]
+
+  - id: relative_strength_vs_ndx
+    class_path: factors.cross_market.relative_strength.RelativeStrengthFactor
+    enabled: true
+    params:
+      benchmark: "NDX"
+      window: 20
+    symbols: ["STAR50", "HSI"]
+    horizons: ["W1", "M1"]
+
+  - id: relative_strength_vs_hsi
+    class_path: factors.cross_market.relative_strength.RelativeStrengthFactor
+    enabled: true
+    params:
+      benchmark: "HSI"
+      window: 20
+    symbols: ["STAR50"]
+    horizons: ["W1", "M1"]
+
+  - id: usd_cnh_change
+    class_path: factors.cross_market.usd_cnh.UsdCnhFactor
+    enabled: true
+    params:
+      window: 5
+    symbols: ["STAR50", "HSI"]
+    horizons: ["D1", "W1"]

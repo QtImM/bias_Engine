@@ -1,0 +1,73 @@
+# Model Configuration
+# Phase 1: Rule-based model with manual weights
+
+models:
+  rule_model:
+    name: "rule_model_v1"
+    type: "rule"
+    description: "Weighted factor score model, tanh squashing"
+
+    horizons:
+      D1:
+        description: "Daily bias - short-term 1-3 day outlook"
+        weights:
+          return_5d: 0.20
+          rsi_14: 0.15
+          bollinger_z: 0.10
+          volume_zscore: 0.10
+          ndx_prev_session_return: 0.15
+          atr_pct: 0.10
+          ema_slope_20: 0.10
+          drawdown_from_60d_high: 0.10
+
+      W1:
+        description: "Weekly bias - 5-10 trading day outlook"
+        weights:
+          return_20d: 0.15
+          ema_slope_20: 0.15
+          ema_slope_60: 0.10
+          ma_stack_score: 0.10
+          realized_vol_20d: 0.10
+          ndx_prev_session_return: 0.10
+          relative_strength_vs_ndx: 0.10
+          drawdown_from_60d_high: 0.10
+          usd_cnh_change: 0.10
+
+      M1:
+        description: "Monthly bias - 20-60 trading day outlook"
+        weights:
+          return_60d: 0.15
+          ema_slope_60: 0.15
+          ma_stack_score: 0.15
+          realized_vol_20d: 0.10
+          relative_strength_vs_ndx: 0.15
+          drawdown_from_60d_high: 0.10
+          usd_cnh_change: 0.10
+          atr_pct: 0.10
+
+    # How to map raw bias to label
+    thresholds:
+      bullish: 0.3     # bias > 0.3 => bullish
+      bearish: -0.3    # bias < -0.3 => bearish
+      # between => neutral
+
+  sklearn_model:
+    name: "sklearn_hgb_v1"
+    type: "hist_gradient_boosting"
+    description: "Three-class supervised baseline using feature matrix and labels"
+    random_state: 42
+    min_train_rows: 120
+
+label_engine:
+  horizons:
+    D1:
+      forward_days: 3
+      description: "3 trading days forward return"
+    W1:
+      forward_days: 10
+      description: "10 trading days forward return"
+    M1:
+      forward_days: 40
+      description: "40 trading days forward return"
+
+  theta: 0.3   # volatility-adjusted threshold for label classification

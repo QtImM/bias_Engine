@@ -1,0 +1,1613 @@
+下面这个系统，我建议不要叫“预测模型”，而是叫 **多时间框架 Bias Engine**。它的目标不是直接给“买/卖”，而是每天对每个标的输出：
+
+> **日线 bias：偏多 / 中性 / 偏空**
+> **周线 bias：偏多 / 中性 / 偏空**
+> **月线 bias：偏多 / 中性 / 偏空**
+> 同时给出置信度、主要影响因子、模型版本、数据新鲜度。
+
+这样就可以自然表达你说的情况：**一天看多，但一周框架看空**。这不是矛盾，而是多周期结构。
+
+---
+
+## 1. 标的定义
+
+我先按下面三个指数来设计：
+
+| 内部标的名    | 实际标的                                                                 | 说明                                                                |
+| -------- | -------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `STAR50` | 科创50 / SSE Science and Technology Innovation Board 50 Index / 000688 | 上交所官方页面显示该指数代码为 000688。([Shanghai Stock Exchange][1])             |
+| `HSI`    | 恒生指数                                                                 | 恒生指数是香港市场最常用的宽基指标之一，官方说明其于 1969 年公开推出。([HSI][2])                  |
+| `NDX`    | Nasdaq-100 Index                                                     | 纳指100包含在 Nasdaq 上市的 100 家大型非金融公司。([Nasdaq Global Index Watch][3]) |
+
+如果你说的“科创”不是科创50，而是科创板整体、科创100、科创ETF，系统架构完全不变，只需要改 `instrument_master` 里的标的映射。
+
+---
+
+## 2. 核心输出：Bias 不是简单涨跌预测
+
+我建议每个标的每天输出下面这张“偏见矩阵”：
+
+| symbol |       date | D bias | W bias | M bias | D conf | W conf | M conf | summary    |
+| ------ | ---------: | -----: | -----: | -----: | -----: | -----: | -----: | ---------- |
+| STAR50 | 2026-xx-xx |  +0.42 |  -0.31 |  -0.08 |   0.63 |   0.58 |   0.51 | 短线反弹，中期仍偏弱 |
+| HSI    | 2026-xx-xx |  -0.12 |  +0.27 |  +0.35 |   0.54 |   0.61 |   0.66 | 日线震荡，周/月偏多 |
+| NDX    | 2026-xx-xx |  +0.55 |  +0.38 |  +0.21 |   0.71 |   0.64 |   0.59 | 多周期偏多      |
+
+其中：
+
+```text
+bias_score ∈ [-1, +1]
+
++1    极端偏多
++0.3  温和偏多
+0     中性 / 无优势
+-0.3  温和偏空
+-1    极端偏空
+```
+
+更正式一点：
+
+```text
+bias_h = P(up_h) - P(down_h)
+confidence_h = 1 - normalized_entropy(P(up_h), P(neutral_h), P(down_h))
+```
+
+也就是说，模型不是只预测“涨/跌”，而是预测：
+
+```text
+未来 h 周期：
+上涨概率
+震荡概率
+下跌概率
+```
+
+然后把它压缩成一个 bias 分数。
+
+---
+
+## 3. 时间框架设计
+
+你说的“不同阶段 bias”，我建议拆成两个概念：
+
+### A. 特征观察周期
+
+也就是用什么周期的数据看市场结构。
+
+| 观察周期 | 例子                      |
+| ---- | ----------------------- |
+| 日线特征 | 5日动量、20日均线斜率、日线 RSI、ATR |
+| 周线特征 | 4周动量、13周均线斜率、周线波动率      |
+| 月线特征 | 3个月 / 6个月趋势、长期风险偏好      |
+
+### B. 预测周期
+
+也就是预测未来多长时间。
+
+| 输出层  | 预测目标               |
+| ---- | ------------------ |
+| `D1` | 未来 1–3 个交易日 bias   |
+| `W1` | 未来 5–10 个交易日 bias  |
+| `M1` | 未来 20–60 个交易日 bias |
+
+第一版建议这样：
+
+```text
+日线 bias = 用日线因子预测未来 1–3 日
+周线 bias = 用日线 + 周线因子预测未来 5–10 日
+月线 bias = 用周线 + 月线 + 宏观因子预测未来 20–60 日
+```
+
+这样你的模型可以输出：
+
+```text
+D1: 看多
+W1: 看空
+M1: 中性
+```
+
+解释为：
+
+> 短线有反弹结构，但周线趋势或风险偏好仍未修复，中期没有明确优势。
+
+---
+
+## 4. 总体架构
+
+我建议系统分成 8 层：
+
+```text
+1. Data Ingestion Layer       数据接入层
+2. Local Data Lake            本地数据湖
+3. Instrument / Calendar      标的、交易日历、时区管理
+4. Factor Engine              可插拔因子引擎
+5. Feature Store              特征库
+6. Label Engine               标签生成器
+7. Model Engine               模型训练与预测
+8. Dashboard / API            展示、查询、回测、解释
+```
+
+核心架构如下：
+
+```text
+外部数据源
+   ↓
+Raw Data / Parquet / DuckDB
+   ↓
+清洗、复权、交易日历、时区对齐
+   ↓
+Factor Plugins
+   ↓
+factor_values 表
+   ↓
+labels 表
+   ↓
+模型训练：Rule Model / LightGBM / CatBoost / Ensemble
+   ↓
+predictions 表
+   ↓
+Dashboard：多周期 bias、因子贡献、历史回测、模型版本
+```
+
+---
+
+## 5. 数据源方案
+
+### 5.1 TradingView 的定位
+
+TradingView 可以用，但我不建议把它作为第一主数据源。
+
+更合理的定位是：
+
+```text
+TradingView = 图表展示 / 人工观察 / Webhook 提醒 / 前端图表
+本地数据库 = 真实研究、训练、回测、预测的数据源
+```
+
+原因是 TradingView 官方文档里的 Datafeed API 主要是给 Advanced Charts 使用的：你需要自己实现 JavaScript 的 datafeed 方法，然后图表库调用你的方法读取数据。也就是说，它适合“你把数据喂给 TradingView 图表”，而不是把 TradingView 当作通用批量历史数据 API。([TradingView][4])
+
+### 5.2 推荐数据源组合
+
+| 数据类型             | 推荐数据源                                                | 用途           |
+| ---------------- | ---------------------------------------------------- | ------------ |
+| 科创50日线 / 指数行情    | Tushare Pro、AKShare                                  | 本地训练、回测      |
+| A股 / 中国指数实时或历史数据 | AKShare                                              | 原型阶段很方便      |
+| 恒生指数             | 恒生指数公司 / 授权供应商 / Yahoo Finance / IBKR                | 港股指数数据       |
+| 纳指100            | Nasdaq Data Link、Nasdaq 页面、IBKR、Alpaca、Yahoo Finance | 美股指数与 ETF 代理 |
+| 交易图表             | TradingView Advanced Charts / Lightweight Charts     | 前端展示         |
+| 宏观数据             | FRED、Nasdaq Data Link、各央行 / 统计局数据                    | 月线 / 周线因子    |
+| 期权 / 波动率         | CBOE、Nasdaq Data Link、IBKR、其他数据商                     | 风险偏好因子       |
+| 新闻 / 情绪          | RSS、GDELT、NewsAPI、本地 LLM 摘要                          | 高频可选，低频更稳    |
+
+Tushare 的 `index_daily` 接口可以获取指数日线行情，包含开、高、低、收、前收、涨跌幅、成交量、成交额等字段；文档也说明单次调取最多 8000 行，需要按日期补全。([Tushare][5]) AKShare 也有中国股票指数数据模块，适合快速原型和补充数据。([AKShare Documentation][6]) Nasdaq Data Link 官方文档提供 API、Python SDK、Excel Add-in 等方式，适合纳指和宏观/另类数据扩展。([Nasdaq Data Link Documentation][7]) yfinance 可以用于研究和原型，但其文档明确说明它不是 Yahoo 官方认证或背书的库，生产环境不要完全依赖它。([Rana Roussi][8]) IBKR API 可以取历史数据，但官方文档说明历史数据权限与市场数据订阅相关。([Interactive Brokers][9])
+
+---
+
+## 6. 本地数据存储设计
+
+第一版我建议用：
+
+```text
+Parquet + DuckDB + SQLite metadata
+```
+
+不建议一开始就上复杂数据库。你的数据是中低频、时间跨度较长、允许延迟，DuckDB + Parquet 非常合适。
+
+目录结构：
+
+```text
+bias_engine/
+  data/
+    raw/
+      provider=tushare/
+      provider=akshare/
+      provider=yfinance/
+      provider=nasdaq_data_link/
+    normalized/
+      bars/
+      macro/
+      constituents/
+      calendar/
+    features/
+      factor_values/
+    labels/
+    predictions/
+  db/
+    bias_engine.duckdb
+  config/
+    instruments.yaml
+    data_sources.yaml
+    factors.yaml
+    models.yaml
+  src/
+    data/
+    factors/
+    labels/
+    models/
+    backtest/
+    api/
+    dashboard/
+```
+
+核心表设计：
+
+```sql
+-- 标的主表
+instrument_master(
+    symbol              TEXT,
+    asset_class         TEXT,
+    market              TEXT,
+    currency            TEXT,
+    timezone            TEXT,
+    provider            TEXT,
+    provider_symbol     TEXT,
+    active              BOOLEAN
+)
+
+-- OHLCV
+bars(
+    symbol              TEXT,
+    timeframe           TEXT,      -- 1d, 1w, 1m
+    ts                  TIMESTAMP,
+    session_date        DATE,
+    open                DOUBLE,
+    high                DOUBLE,
+    low                 DOUBLE,
+    close               DOUBLE,
+    volume              DOUBLE,
+    amount              DOUBLE,
+    provider            TEXT,
+    available_at        TIMESTAMP,
+    ingestion_run_id    TEXT
+)
+
+-- 因子值
+factor_values(
+    symbol              TEXT,
+    ts                  TIMESTAMP,
+    timeframe           TEXT,
+    factor_name         TEXT,
+    factor_version      TEXT,
+    value               DOUBLE,
+    normalized_value    DOUBLE,
+    quality_score       DOUBLE,
+    available_at        TIMESTAMP,
+    created_at          TIMESTAMP
+)
+
+-- 标签
+labels(
+    symbol              TEXT,
+    ts                  TIMESTAMP,
+    horizon             TEXT,      -- D1, W1, M1
+    fwd_return          DOUBLE,
+    fwd_vol_adj_return  DOUBLE,
+    label               INT,       -- -1, 0, +1
+    created_at          TIMESTAMP
+)
+
+-- 预测结果
+predictions(
+    symbol              TEXT,
+    ts                  TIMESTAMP,
+    horizon             TEXT,
+    model_name          TEXT,
+    model_version       TEXT,
+    p_down              DOUBLE,
+    p_neutral           DOUBLE,
+    p_up                DOUBLE,
+    bias_score          DOUBLE,
+    confidence          DOUBLE,
+    top_factors_json    TEXT,
+    created_at          TIMESTAMP
+)
+```
+
+非常重要的一点是 `available_at`。
+
+这可以防止未来函数。例如，美国市场收盘后，纳指数据对第二天亚洲市场才是可用的。所有数据和因子都要有：
+
+```text
+数据发生时间 ts
+数据可用时间 available_at
+```
+
+训练和预测时只允许使用：
+
+```text
+available_at <= prediction_time
+```
+
+这是整个系统可信度的核心。
+
+---
+
+## 7. 因子接口设计：让模型可以不断变复杂
+
+你最重要的要求是：
+
+> 因子必须以接口形式加入，未来可以不断添加、删除、替换。
+
+所以不要把因子写死在模型里，而是做成插件。
+
+### 7.1 因子接口
+
+Python 里可以这样设计：
+
+```python
+from dataclasses import dataclass, field
+from typing import Protocol, Any
+import pandas as pd
+
+
+@dataclass(frozen=True)
+class FactorSpec:
+    name: str
+    version: str
+    family: str
+    description: str
+    inputs: list[str]
+    horizons: list[str]
+    lookback: int
+    release_lag: str = "0D"
+    params: dict[str, Any] = field(default_factory=dict)
+
+
+class Factor(Protocol):
+    spec: FactorSpec
+
+    def compute(self, ctx: "FactorContext") -> pd.DataFrame:
+        """
+        Return columns:
+        symbol, ts, timeframe, factor_name, factor_version,
+        value, available_at, quality_score
+        """
+        ...
+```
+
+每个因子都必须声明：
+
+```text
+因子名
+版本
+类别
+需要哪些原始数据
+适用于哪些周期
+lookback 长度
+数据延迟
+计算参数
+```
+
+### 7.2 示例因子
+
+```python
+class EmaSlopeFactor:
+    spec = FactorSpec(
+        name="ema_slope",
+        version="1.0.0",
+        family="trend",
+        description="EMA slope normalized by recent volatility",
+        inputs=["bars.close"],
+        horizons=["D1", "W1"],
+        lookback=60,
+        params={"window": 20}
+    )
+
+    def compute(self, ctx):
+        bars = ctx.load_bars(
+            symbols=ctx.symbols,
+            timeframe="1d",
+            start=ctx.start,
+            end=ctx.end,
+            fields=["close"]
+        )
+
+        window = self.spec.params["window"]
+
+        bars["ema"] = (
+            bars.groupby("symbol")["close"]
+            .transform(lambda x: x.ewm(span=window, adjust=False).mean())
+        )
+
+        bars["ema_slope"] = (
+            bars.groupby("symbol")["ema"]
+            .diff(5) / bars["ema"]
+        )
+
+        out = bars[["symbol", "ts", "ema_slope"]].copy()
+        out["timeframe"] = "1d"
+        out["factor_name"] = self.spec.name
+        out["factor_version"] = self.spec.version
+        out["value"] = out["ema_slope"]
+        out["available_at"] = out["ts"]
+        out["quality_score"] = 1.0
+
+        return out[
+            [
+                "symbol", "ts", "timeframe",
+                "factor_name", "factor_version",
+                "value", "available_at", "quality_score"
+            ]
+        ]
+```
+
+### 7.3 因子配置文件
+
+以后添加因子，不改核心代码，只改配置：
+
+```yaml
+factors:
+  - id: ema_slope_20
+    class_path: factors.trend.ema_slope.EmaSlopeFactor
+    enabled: true
+    params:
+      window: 20
+    symbols: ["STAR50", "HSI", "NDX"]
+    horizons: ["D1", "W1"]
+
+  - id: rsi_14
+    class_path: factors.mean_reversion.rsi.RsiFactor
+    enabled: true
+    params:
+      window: 14
+    symbols: ["STAR50", "HSI", "NDX"]
+    horizons: ["D1"]
+
+  - id: ndx_lead_asia
+    class_path: factors.cross_market.ndx_lead.NdxLeadFactor
+    enabled: true
+    params:
+      lag_days: 1
+    symbols: ["STAR50", "HSI"]
+    horizons: ["D1", "W1"]
+```
+
+删除因子也不需要删代码，只要：
+
+```yaml
+enabled: false
+```
+
+---
+
+## 8. 第一批因子库设计
+
+我建议从 7 类因子开始。
+
+### 8.1 趋势因子
+
+用于判断市场当前方向。
+
+| 因子                   | 说明                           |
+| -------------------- | ---------------------------- |
+| `return_5d`          | 5日收益率                        |
+| `return_20d`         | 20日收益率                       |
+| `return_60d`         | 60日收益率                       |
+| `ema_slope_20`       | 20日 EMA 斜率                   |
+| `ma_stack_score`     | MA5 / MA20 / MA60 / MA120 排列 |
+| `breakout_20d`       | 是否突破 20 日高点                  |
+| `drawdown_from_high` | 距离近期高点回撤幅度                   |
+
+趋势因子通常对周线、月线更有用。
+
+---
+
+### 8.2 均值回归因子
+
+用于判断短期过热或超跌。
+
+| 因子                    | 说明                 |
+| --------------------- | ------------------ |
+| `rsi_14`              | RSI                |
+| `bollinger_z`         | 距离布林中轨的 z-score    |
+| `price_to_ma20_z`     | 收盘价相对 20 日均线偏离     |
+| `short_term_reversal` | 过去 3–5 日极端涨跌后的反转概率 |
+
+均值回归因子对日线 bias 更有用。
+
+---
+
+### 8.3 波动率与风险因子
+
+| 因子                 | 说明                            |
+| ------------------ | ----------------------------- |
+| `realized_vol_20d` | 20日实际波动率                      |
+| `atr_pct`          | ATR / Close                   |
+| `vol_zscore`       | 当前波动率相对历史分位数                  |
+| `vol_of_vol`       | 波动率自身的波动                      |
+| `range_expansion`  | 当日振幅是否异常扩大                    |
+| `vix` / `vxn`      | 美股风险偏好，可影响 NDX，也可作为亚洲市场外部风险因子 |
+
+波动率因子不一定告诉你方向，但会影响置信度。比如：
+
+```text
+趋势偏多 + 波动率急剧上升 = 仍偏多，但置信度下降
+```
+
+---
+
+### 8.4 成交量 / 流动性因子
+
+| 因子                     | 说明          |
+| ---------------------- | ----------- |
+| `volume_zscore`        | 成交量异常程度     |
+| `amount_zscore`        | 成交额异常程度     |
+| `up_volume_ratio`      | 上涨日成交量占比    |
+| `price_volume_confirm` | 价格上涨是否有量能确认 |
+
+对科创和恒生尤其重要，因为流动性变化往往反映风险偏好的切换。
+
+---
+
+### 8.5 市场宽度因子
+
+如果后面你愿意接成分股数据，这类因子会很有价值。
+
+| 因子                           | 说明              |
+| ---------------------------- | --------------- |
+| `pct_above_ma20`             | 成分股中站上 MA20 的比例 |
+| `pct_above_ma60`             | 成分股中站上 MA60 的比例 |
+| `advance_decline_ratio`      | 上涨家数 / 下跌家数     |
+| `equal_weight_vs_cap_weight` | 等权指数相对市值加权指数强弱  |
+| `new_high_new_low`           | 创新高 / 创新低数量     |
+
+第一版可以先不做，避免因为成分股历史变更带来幸存者偏差。等指数级模型跑通后，再加入成分股宽度因子。
+
+---
+
+### 8.6 跨市场因子
+
+这对你这三个标的非常关键。
+
+| 因子                                | 影响对象               | 说明                  |
+| --------------------------------- | ------------------ | ------------------- |
+| `ndx_return_prev_session`         | STAR50 / HSI       | 纳指上一交易日表现对亚洲科技资产的影响 |
+| `sox_return`                      | STAR50 / HSI / NDX | 半导体指数对科技风格影响        |
+| `usd_cnh_change`                  | STAR50 / HSI       | 人民币汇率风险偏好           |
+| `hsi_to_ndx_relative_strength`    | HSI / NDX          | 港股科技相对美股科技强弱        |
+| `star50_to_hsi_relative_strength` | STAR50 / HSI       | A股科技相对港股强弱          |
+| `treasury_yield_change`           | NDX / HSI          | 美债利率变化对成长股估值影响      |
+| `dxy_change`                      | HSI / STAR50 / NDX | 美元强弱对风险资产影响         |
+
+这类因子必须严格处理时区。例如：
+
+```text
+美国周一收盘后的 NDX 数据，
+只能用于亚洲周二或之后的预测。
+```
+
+---
+
+### 8.7 宏观 / 政策 / 情绪因子
+
+这类适合周线和月线。
+
+| 因子                     | 说明             |
+| ---------------------- | -------------- |
+| `china_credit_impulse` | 中国信用周期         |
+| `pmi_surprise`         | PMI 是否超预期      |
+| `liquidity_proxy`      | 利率、逆回购、资金面代理变量 |
+| `fed_rate_expectation` | 美联储利率预期        |
+| `earnings_revision`    | 盈利预期修正         |
+| `news_sentiment_score` | 新闻情绪           |
+| `policy_event_score`   | 政策事件强度         |
+
+宏观因子频率低，不适合日线高频预测，但对月线 bias 很重要。
+
+---
+
+## 9. 标签设计：模型到底学什么？
+
+如果直接用未来收益率正负做标签，会太噪声。更好的方式是用“波动率调整后的未来收益”。
+
+### 9.1 未来收益
+
+```text
+fwd_return_h = close[t+h] / close[t] - 1
+```
+
+### 9.2 波动率调整
+
+```text
+fwd_vol_adj_return_h = fwd_return_h / realized_vol_h
+```
+
+### 9.3 三分类标签
+
+```text
+if fwd_vol_adj_return_h > +theta:
+    label = +1   # bullish
+elif fwd_vol_adj_return_h < -theta:
+    label = -1   # bearish
+else:
+    label = 0    # neutral
+```
+
+建议一开始：
+
+```text
+theta = 0.25 到 0.50
+```
+
+这样可以过滤掉很多噪声行情。
+
+### 9.4 三个 horizon
+
+```text
+D1: h = 3 trading days
+W1: h = 10 trading days
+M1: h = 40 trading days
+```
+
+第一版可以先用固定 horizon，后面再扩展：
+
+```text
+D1 = 1 / 2 / 3 日模型 ensemble
+W1 = 5 / 10 日模型 ensemble
+M1 = 20 / 40 / 60 日模型 ensemble
+```
+
+---
+
+## 10. 模型方案
+
+我建议分三层推进。
+
+---
+
+### 阶段一：规则评分模型
+
+这是最容易解释、最快能上线的版本。
+
+每个因子先标准化成：
+
+```text
+factor_score ∈ [-1, +1]
+```
+
+然后：
+
+```text
+raw_bias_h = Σ weight_i,h × factor_score_i
+bias_h = tanh(raw_bias_h)
+```
+
+例如：
+
+```text
+日线 bias =
+  0.25 × 短期动量
++ 0.20 × 均值回归
++ 0.15 × 成交量确认
++ 0.20 × 跨市场风险
++ 0.20 × 波动率状态
+```
+
+周线 bias：
+
+```text
+周线 bias =
+  0.35 × 趋势
++ 0.20 × 市场宽度
++ 0.20 × 跨市场
++ 0.15 × 波动率
++ 0.10 × 宏观
+```
+
+月线 bias：
+
+```text
+月线 bias =
+  0.35 × 长周期趋势
++ 0.25 × 宏观流动性
++ 0.20 × 相对强弱
++ 0.10 × 波动率 regime
++ 0.10 × 估值 / 情绪
+```
+
+优点：
+
+```text
+可解释
+容易 debug
+因子增删很方便
+适合做第一版 benchmark
+```
+
+缺点：
+
+```text
+权重主观
+复杂非线性关系捕捉较弱
+```
+
+---
+
+### 阶段二：机器学习模型
+
+推荐第一批 ML 模型：
+
+```text
+Logistic Regression
+Random Forest
+LightGBM
+CatBoost
+XGBoost
+```
+
+我最建议的主模型是：
+
+```text
+LightGBM / CatBoost 三分类模型
+```
+
+原因：
+
+```text
+适合表格数据
+能处理非线性
+训练快
+对样本量要求比深度学习低
+容易看特征重要性
+```
+
+每个 horizon 一个模型：
+
+```text
+model_D1: features_t -> P(up_3d, neutral_3d, down_3d)
+model_W1: features_t -> P(up_10d, neutral_10d, down_10d)
+model_M1: features_t -> P(up_40d, neutral_40d, down_40d)
+```
+
+也可以做一个多任务版本：
+
+```text
+shared_features
+   ├── D1 head
+   ├── W1 head
+   └── M1 head
+```
+
+但第一版没必要一开始就多任务，先分开更好调试。
+
+---
+
+### 阶段三：Regime + Ensemble
+
+市场不是稳定的。科技股在不同市场环境下，因子有效性会变。
+
+所以后面要加入 regime 模型：
+
+```text
+risk_on
+risk_off
+high_vol
+low_vol
+liquidity_expansion
+liquidity_contraction
+trend_market
+range_market
+```
+
+最终输出可以是 ensemble：
+
+```text
+final_bias =
+  0.30 × rule_model_bias
++ 0.50 × ml_model_bias
++ 0.20 × regime_adjustment
+```
+
+或者按状态动态切换：
+
+```text
+if regime == high_vol:
+    降低趋势因子权重
+    提高波动率和风险因子权重
+
+if regime == trend_market:
+    提高动量 / 趋势因子权重
+
+if regime == range_market:
+    提高均值回归因子权重
+```
+
+---
+
+## 11. 回测与验证方式
+
+这个系统最容易犯的错是过拟合和未来函数，所以验证要非常严格。
+
+### 11.1 不用随机切分
+
+不能用：
+
+```text
+random train_test_split
+```
+
+要用：
+
+```text
+walk-forward validation
+```
+
+例如：
+
+```text
+训练窗口：过去 N 年
+验证窗口：之后一段时间
+向前滚动
+重复训练和测试
+```
+
+### 11.2 Purged / Embargo
+
+因为你有 10日、40日标签，样本之间会重叠。
+
+所以训练和验证之间要留空：
+
+```text
+embargo >= max_horizon
+```
+
+例如月线模型 horizon 是 40 日，那么训练集和测试集之间至少留 40 个交易日隔离。
+
+### 11.3 评价指标
+
+不要只看准确率。
+
+要看：
+
+| 类型    | 指标                                     |
+| ----- | -------------------------------------- |
+| 分类质量  | accuracy、macro F1、log loss、Brier score |
+| 概率质量  | calibration curve                      |
+| 因子质量  | IC、Rank IC、分组收益、稳定性                    |
+| 方向质量  | hit ratio、up/down precision            |
+| 策略化测试 | 收益、回撤、Sharpe、turnover                  |
+| 稳定性   | 不同市场状态下是否失效                            |
+
+### 11.4 因子准入标准
+
+每个新因子进入模型前，必须过关：
+
+```text
+1. coverage 足够高
+2. 无未来函数
+3. 极值可控
+4. 与已有因子相关性不过高
+5. 至少在一个 horizon 上有正向贡献
+6. walk-forward 中没有明显过拟合
+7. 加入模型后 out-of-sample 指标改善
+```
+
+如果某个因子只在训练集有效、测试集无效，就不能进入主模型。
+
+---
+
+## 12. 因子添加 / 删除 / 迭代流程
+
+这是你的系统变复杂的核心机制。
+
+### 添加新因子的标准流程
+
+```text
+1. 新建因子类
+2. 在 factors.yaml 注册
+3. 跑历史 backfill
+4. 做因子质量检查
+5. 生成 factor report
+6. 加入候选 feature set
+7. walk-forward 训练
+8. 与当前 champion 模型比较
+9. 如果通过，生成新 model_version
+10. dashboard 上线
+```
+
+### 删除因子的标准流程
+
+```text
+1. 在 factors.yaml 中 disabled
+2. 生成新的 feature_set_version
+3. 重新训练模型
+4. 对比删除前后的表现
+5. 如果表现不变或更好，则永久下线
+```
+
+### 版本管理
+
+你需要同时管理：
+
+```text
+factor_version
+feature_set_version
+label_version
+model_version
+backtest_version
+prediction_version
+```
+
+比如：
+
+```text
+factor_set_v1:
+  trend_basic
+  rsi_basic
+  volatility_basic
+  cross_market_basic
+
+factor_set_v2:
+  factor_set_v1
+  + breadth_basic
+  + ndx_lead_asia
+```
+
+这样你永远知道：
+
+```text
+某一天的 bias 是哪个模型、哪些因子、哪批数据算出来的。
+```
+
+---
+
+## 13. Dashboard 设计
+
+第一版 dashboard 我建议用 Streamlit 或 FastAPI + 前端。
+
+### 首页：Bias Heatmap
+
+```text
+               D1       W1       M1
+STAR50       +0.32    -0.18    -0.05
+HSI          -0.08    +0.21    +0.34
+NDX          +0.45    +0.39    +0.22
+```
+
+颜色：
+
+```text
+深绿 = 强偏多
+浅绿 = 温和偏多
+灰色 = 中性
+浅红 = 温和偏空
+深红 = 强偏空
+```
+
+### 标的详情页
+
+展示：
+
+```text
+1. 当前 D/W/M bias
+2. 过去 180 天 bias 历史
+3. 指数价格图
+4. top positive factors
+5. top negative factors
+6. 模型置信度
+7. 数据是否过期
+8. 当前 market regime
+```
+
+### 因子页
+
+展示：
+
+```text
+1. 因子当前值
+2. 因子历史分位数
+3. 因子与未来收益关系
+4. IC 时间序列
+5. 因子覆盖率
+6. 因子相关性矩阵
+```
+
+### 回测页
+
+展示：
+
+```text
+1. bias 分组收益
+2. 多空测试
+3. 只做方向判断的 hit ratio
+4. 不同市场 regime 下的表现
+5. 不同 horizon 下的表现
+```
+
+---
+
+## 14. API 设计
+
+如果你希望后面自动化调用，可以做 FastAPI。
+
+核心接口：
+
+```text
+GET /prediction/latest?symbol=STAR50
+GET /prediction/history?symbol=STAR50&horizon=W1
+GET /factors/latest?symbol=HSI
+GET /factors/history?symbol=NDX&factor=ema_slope
+GET /models/runs
+GET /backtest/runs
+POST /factors/recompute
+POST /models/train
+```
+
+返回示例：
+
+```json
+{
+  "symbol": "STAR50",
+  "as_of": "2026-05-11",
+  "bias": {
+    "D1": {
+      "score": 0.42,
+      "label": "bullish",
+      "confidence": 0.63
+    },
+    "W1": {
+      "score": -0.31,
+      "label": "bearish",
+      "confidence": 0.58
+    },
+    "M1": {
+      "score": -0.08,
+      "label": "neutral",
+      "confidence": 0.51
+    }
+  },
+  "top_positive_factors": [
+    {"name": "short_term_reversal", "value": 0.72},
+    {"name": "ndx_prev_session", "value": 0.44}
+  ],
+  "top_negative_factors": [
+    {"name": "weekly_trend", "value": -0.61},
+    {"name": "volatility_regime", "value": -0.36}
+  ],
+  "model_version": "bias_lgbm_v0.3.1",
+  "feature_set_version": "feature_set_v0.4.0"
+}
+```
+
+---
+
+## 15. 具体实现路径
+
+### 阶段 1：先做最小可用版本
+
+目标：
+
+```text
+只做日线数据
+只做三个指数
+只做 D1 / W1 / M1
+只做 10–20 个基础因子
+先用规则模型输出 bias
+```
+
+任务：
+
+```text
+1. 建立 instruments.yaml
+2. 接入 Tushare / AKShare / yfinance / Nasdaq Data Link 中的一到两个数据源
+3. 统一 OHLCV 格式
+4. 存储到 Parquet + DuckDB
+5. 建立 factor interface
+6. 实现第一批技术因子
+7. 实现标签生成
+8. 实现规则评分模型
+9. 输出 bias matrix
+10. 做简单 dashboard
+```
+
+第一版因子建议：
+
+```text
+return_5d
+return_20d
+return_60d
+ema_slope_20
+ema_slope_60
+ma_stack_score
+rsi_14
+bollinger_z
+realized_vol_20d
+atr_pct
+volume_zscore
+drawdown_from_60d_high
+relative_strength_vs_ndx
+relative_strength_vs_hsi
+ndx_prev_session_return
+usd_cnh_change
+```
+
+---
+
+### 阶段 2：加入机器学习
+
+目标：
+
+```text
+用 LightGBM / CatBoost 替代纯规则权重
+```
+
+任务：
+
+```text
+1. 生成 labels 表
+2. 做 D1 / W1 / M1 三套标签
+3. 建立 feature matrix
+4. 做 walk-forward validation
+5. 训练三分类模型
+6. 输出 p_up / p_neutral / p_down
+7. 计算 bias_score
+8. 与规则模型对比
+9. 做模型校准
+10. 保存 model registry
+```
+
+输出：
+
+```text
+rule_model_v1
+lgbm_D1_v1
+lgbm_W1_v1
+lgbm_M1_v1
+ensemble_v1
+```
+
+---
+
+### 阶段 3：加入跨市场与 regime
+
+目标：
+
+```text
+让模型知道现在是什么市场状态
+```
+
+新增因子：
+
+```text
+VIX / VXN
+10Y Treasury yield
+DXY
+USD/CNH
+SOX
+QQQ
+Hang Seng Tech
+China ADR index proxy
+global risk-on / risk-off score
+```
+
+新增模型：
+
+```text
+regime_classifier
+```
+
+输出：
+
+```text
+regime = risk_on / risk_off / high_vol / trend / range
+```
+
+然后不同 regime 下动态调整权重。
+
+---
+
+### 阶段 4：加入成分股宽度
+
+目标：
+
+```text
+提高对科创50和恒生的内部结构识别能力
+```
+
+新增数据：
+
+```text
+科创50成分股
+恒生成分股
+纳指100成分股
+成分股 OHLCV
+```
+
+新增因子：
+
+```text
+pct_above_ma20
+pct_above_ma60
+advance_decline_ratio
+equal_weight_relative_strength
+top10_contribution
+sector_breadth
+```
+
+注意：这里要处理成分股历史变更，否则会有幸存者偏差。
+
+---
+
+### 阶段 5：加入新闻 / 政策 / 事件因子
+
+目标：
+
+```text
+让模型理解非价格信息
+```
+
+但这一步不建议太早做。先把价格、波动率、跨市场、宽度做好。
+
+后续可以加入：
+
+```text
+新闻情绪
+政策事件
+央行会议
+财报季
+行业主题热度
+AI / 半导体 / 中国政策关键词
+```
+
+可以用 LLM 把新闻转成结构化因子：
+
+```json
+{
+  "event_type": "policy_support",
+  "region": "China",
+  "sector": "technology",
+  "sentiment": 0.65,
+  "confidence": 0.72,
+  "effective_horizon": "W1"
+}
+```
+
+---
+
+## 16. 第一版技术栈
+
+我建议：
+
+| 模块        | 工具                                           |
+| --------- | -------------------------------------------- |
+| 数据抓取      | Python, requests, yfinance, akshare, tushare |
+| 本地存储      | Parquet, DuckDB                              |
+| 数据处理      | pandas, polars                               |
+| 因子计算      | pandas / polars                              |
+| 模型        | scikit-learn, LightGBM, CatBoost             |
+| 回测        | vectorbt / 自写轻量回测                            |
+| API       | FastAPI                                      |
+| Dashboard | Streamlit                                    |
+| 调度        | cron / Prefect                               |
+| 配置        | YAML                                         |
+| 实验记录      | MLflow 或本地 JSON registry                     |
+| 图表        | Plotly / TradingView Advanced Charts         |
+
+---
+
+## 17. MVP 的文件结构
+
+```text
+bias_engine/
+  config/
+    instruments.yaml
+    data_sources.yaml
+    factors.yaml
+    models.yaml
+
+  src/
+    data/
+      ingest.py
+      normalize.py
+      calendars.py
+      symbol_mapper.py
+
+    factors/
+      base.py
+      registry.py
+      trend/
+        returns.py
+        ema_slope.py
+        ma_stack.py
+      mean_reversion/
+        rsi.py
+        bollinger.py
+      volatility/
+        realized_vol.py
+        atr.py
+      cross_market/
+        ndx_lead.py
+        relative_strength.py
+
+    labels/
+      make_labels.py
+
+    models/
+      rule_model.py
+      train_lgbm.py
+      predict.py
+      calibrate.py
+
+    backtest/
+      walk_forward.py
+      factor_report.py
+      prediction_report.py
+
+    api/
+      main.py
+
+    dashboard/
+      app.py
+
+  data/
+    raw/
+    normalized/
+    features/
+    labels/
+    predictions/
+
+  notebooks/
+    01_data_check.ipynb
+    02_factor_report.ipynb
+    03_model_training.ipynb
+    04_bias_dashboard.ipynb
+```
+
+---
+
+## 18. 第一版 `instruments.yaml`
+
+```yaml
+instruments:
+  - symbol: STAR50
+    name: SSE STAR 50 Index
+    market: CN
+    timezone: Asia/Shanghai
+    currency: CNY
+    primary_provider: tushare
+    provider_symbols:
+      tushare: "000688.SH"
+      tradingview: "SSE:000688"
+
+  - symbol: HSI
+    name: Hang Seng Index
+    market: HK
+    timezone: Asia/Hong_Kong
+    currency: HKD
+    primary_provider: yfinance
+    provider_symbols:
+      yfinance: "^HSI"
+
+  - symbol: NDX
+    name: Nasdaq-100 Index
+    market: US
+    timezone: America/New_York
+    currency: USD
+    primary_provider: nasdaq_data_link
+    provider_symbols:
+      yfinance: "^NDX"
+      etf_proxy: "QQQ"
+```
+
+生产环境里，`HSI` 和 `NDX` 最好用授权数据源。研究阶段可以用 yfinance / AKShare / Nasdaq Data Link 做原型。
+
+---
+
+## 19. 最关键的设计原则
+
+这个模型能不能长期进化，关键不在于第一版模型多复杂，而在于下面这些原则。
+
+### 原则 1：因子和模型解耦
+
+因子只负责计算：
+
+```text
+某个时间点的某个市场状态
+```
+
+模型只负责学习：
+
+```text
+这些状态与未来 bias 的关系
+```
+
+不要在因子里写“买入卖出逻辑”。
+
+---
+
+### 原则 2：所有因子都要有版本
+
+同名因子也可能改算法。
+
+比如：
+
+```text
+ema_slope_v1 = EMA20 五日斜率
+ema_slope_v2 = EMA20 十日斜率 / realized_vol
+```
+
+它们必须是两个版本，否则历史预测无法复现。
+
+---
+
+### 原则 3：所有数据必须有 available_at
+
+这是防止未来函数的底线。
+
+```text
+宏观数据公布日
+财报发布时间
+美股收盘时间
+港股收盘时间
+A股收盘时间
+```
+
+都要转成系统里的 `available_at`。
+
+---
+
+### 原则 4：先让模型稳定，再让模型复杂
+
+推荐复杂度顺序：
+
+```text
+规则模型
+↓
+LightGBM / CatBoost
+↓
+Regime ensemble
+↓
+成分股宽度
+↓
+新闻 / 政策 / LLM 因子
+↓
+多任务模型 / Transformer
+```
+
+不要一开始直接上深度学习。三个指数的日线样本量有限，复杂模型很容易过拟合。
+
+---
+
+## 20. 我建议你的第一版目标
+
+第一版不要追求“预测很准”，而是追求：
+
+```text
+每天稳定地产生 D/W/M 三个 bias
+每个 bias 可以解释
+每个因子可以追踪
+每次加因子可以验证有没有贡献
+每个模型版本可以复现
+```
+
+第一版成功标准：
+
+```text
+1. 三个标的每天都有 bias 输出
+2. bias 历史曲线可视化
+3. 可以看到每次 bias 改变由哪些因子驱动
+4. 可以关闭某个因子重新训练
+5. 可以比较 feature_set_v1 和 feature_set_v2
+6. 可以避免未来函数
+7. 可以做 walk-forward 回测
+```
+
+---
+
+## 21. 最终形态
+
+最终系统应该像这样工作：
+
+```text
+每天收盘后：
+  1. 拉取 STAR50 / HSI / NDX 最新数据
+  2. 更新本地 bars
+  3. 计算所有启用因子
+  4. 检查数据质量
+  5. 生成 D1 / W1 / M1 特征矩阵
+  6. 调用模型预测
+  7. 写入 predictions
+  8. 更新 dashboard
+  9. 输出解释报告
+```
+
+报告示例：
+
+```text
+STAR50 当前：
+
+D1 bias: +0.38，温和偏多
+原因：
+- 短期超跌反弹因子转正
+- NDX 前一交易日偏强
+- 成交量略有修复
+
+W1 bias: -0.26，温和偏空
+原因：
+- 周线趋势仍在下降
+- 60日均线斜率未修复
+- 波动率 regime 偏高
+
+M1 bias: -0.05，中性
+原因：
+- 长周期趋势弱
+- 但宏观流动性因子未继续恶化
+```
+
+这就是你想要的“分阶段偏见模型”。
+
+---
+
+## 22. 我的推荐结论
+
+你应该做的是：
+
+```text
+一个可插拔因子的多时间框架 Bias Engine
+```
+
+而不是一个单一预测模型。
+
+技术路线：
+
+```text
+DuckDB + Parquet 本地数据湖
+Python 因子插件系统
+日线 / 周线 / 月线标签
+规则模型做 baseline
+LightGBM / CatBoost 做主模型
+Regime model 做状态调整
+Streamlit / FastAPI 做展示和接口
+TradingView 主要做图表展示，不做核心数据源
+```
+
+最先实现的版本：
+
+```text
+三个标的：
+  STAR50
+  HSI
+  NDX
+
+三个输出：
+  D1 bias
+  W1 bias
+  M1 bias
+
+第一批因子：
+  趋势
+  均值回归
+  波动率
+  成交量
+  相对强弱
+  跨市场领先
+```
+
+后面再逐步加：
+
+```text
+成分股宽度
+宏观流动性
+期权波动率
+新闻情绪
+政策事件
+regime switching
+ensemble 模型
+```
+
+这套设计的好处是：你每增加一个因子，系统不是被迫重写，而是进入一个标准流程：
+
+```text
+注册因子 → 回填历史 → 检查质量 → 训练模型 → 回测比较 → 上线或拒绝
+```
+
+这才是可以长期进化的预测框架。
+
+[1]: https://english.sse.com.cn/markets/indices/data/list/constituents/index.shtml?COMPANY_CODE=000688&INDEX_Code=000688&utm_source=chatgpt.com "SSE Science and Technology Innovation Board 50 Index 000688"
+[2]: https://www.hsi.com.hk/eng/indexes/all-indexes/hsi?utm_source=chatgpt.com "Hang Seng Index and Sub-indexes"
+[3]: https://indexes.nasdaqomx.com/Index/Overview/NDX?utm_source=chatgpt.com "Overview for NDX - NASDAQ-100"
+[4]: https://in.tradingview.com/charting-library-docs/latest/connecting_data/Datafeed-API/?utm_source=chatgpt.com "Datafeed API | Advanced Charts Documentation - TradingView"
+[5]: https://tushare.pro/document/2?doc_id=95&utm_source=chatgpt.com "Tushare数据"
+[6]: https://akshare-hh.readthedocs.io/en/latest/data/index/index.html?utm_source=chatgpt.com "AKShare 指数数据 — AKShare 1.4.92 documentation"
+[7]: https://docs.data.nasdaq.com/?utm_source=chatgpt.com "Nasdaq Data Link Documentation"
+[8]: https://ranaroussi.github.io/yfinance/index.html?utm_source=chatgpt.com "yfinance documentation — yfinance"
+[9]: https://interactivebrokers.github.io/tws-api/historical_data.html?utm_source=chatgpt.com "TWS API v9.72+: Historical Market Data - GitHub Pages"
