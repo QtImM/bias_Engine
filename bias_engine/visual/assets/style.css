@@ -147,6 +147,69 @@ body::after {
   border-color: rgba(244, 199, 107, 0.3);
 }
 
+/* ── Hero Summary ── */
+.hero-summary {
+  margin-bottom: 36px;
+}
+
+.hero-card {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 20px 28px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--line);
+  background: var(--panel);
+  position: relative;
+  overflow: hidden;
+}
+
+.hero-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: 0.08;
+  pointer-events: none;
+}
+
+.hero-card.is-bullish::before { background: var(--bull); }
+.hero-card.is-bearish::before { background: var(--bear); }
+.hero-card.is-neutral::before { background: var(--neutral); }
+
+.hero-label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.hero-symbol {
+  font-size: 1.4rem;
+  font-weight: 700;
+}
+
+.hero-card.is-bullish .hero-symbol { color: var(--bull); }
+.hero-card.is-bearish .hero-symbol { color: var(--bear); }
+.hero-card.is-neutral .hero-symbol { color: var(--neutral); }
+
+.hero-score {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 2rem;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.hero-card.is-bullish .hero-score { color: var(--bull); }
+.hero-card.is-bearish .hero-score { color: var(--bear); }
+.hero-card.is-neutral .hero-score { color: var(--neutral); }
+
+.hero-detail {
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-family: 'JetBrains Mono', monospace;
+}
+
 /* ── Bias Matrix ── */
 .section-title {
   font-size: 0.78rem;

@@ -1,18 +1,18 @@
 /* ═══════════════════════════════════════════
-   Bias Engine — Control Room App
+   Bias Engine — 市场偏见控制台
    ═══════════════════════════════════════════ */
 
 const DATA_PATHS = {
   predictions: './data/predictions.json',
-  predictionsFallback: './data/sample_predictions.json',
   factorQuality: './data/factor_quality.json',
-  factorQualityFallback: './data/sample_factor_quality.json',
+  factorLatest: './data/factor_latest.json',
 };
 
-const MARKET_TAGS = { STAR50: 'CN', HSI: 'HK', NDX: 'US' };
+const MARKET_TAGS = { STAR50: '科创50', HSI: '恒生', NDX: '纳指100' };
 const HORIZONS = ['D1', 'W1', 'M1'];
+const HORIZON_CN = { D1: '日线', W1: '周线', M1: '月线' };
 
-// ── Data Loading ──
+// ── 数据加载 ──
 
 async function loadJson(path) {
   try {
@@ -20,12 +20,12 @@ async function loadJson(path) {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } catch (e) {
-    console.warn(`Failed to load ${path}:`, e.message);
+    console.warn(`加载失败 ${path}:`, e.message);
     return null;
   }
 }
 
-// ── Helpers ──
+// ── 工具函数 ──
 
 function groupPredictions(predictions) {
   const grouped = {};
@@ -40,6 +40,12 @@ function getBiasClass(label) {
   if (label === 'bullish') return 'is-bullish';
   if (label === 'bearish') return 'is-bearish';
   return 'is-neutral';
+}
+
+function labelCN(label) {
+  if (label === 'bullish') return '偏多';
+  if (label === 'bearish') return '偏空';
+  return '中性';
 }
 
 function formatScore(score) {
@@ -68,7 +74,6 @@ function generateNarrative(symbolData) {
   const m1 = symbolData.M1?.label || 'neutral';
   const s = (l) => l === 'bullish' ? '偏多' : l === 'bearish' ? '偏空' : '中性';
 
-  const shortBull = d1 === 'bullish';
   const longBull = (w1 === 'bullish' || m1 === 'bullish');
   const longBear = (w1 === 'bearish' || m1 === 'bearish');
 
@@ -81,44 +86,76 @@ function generateNarrative(symbolData) {
   return `日线${s(d1)}，周线${s(w1)}，月线${s(m1)}`;
 }
 
-// ── Render: Topbar ──
+// ── 渲染：顶部状态栏 ──
 
 function renderTopbar(predictions) {
   const el = document.getElementById('topbar');
   const latest = predictions.find(p => p.as_of);
   const asOf = latest?.as_of || 'N/A';
   const model = latest?.model_version || 'unknown';
+  const featureSet = latest?.feature_set_version || 'feature_set_v1';
   const stale = isStale(asOf);
 
   el.innerHTML = `
     <div class="topbar-left">
-      <h1>Bias Engine <span>Market Regime Console</span></h1>
-      <div class="subtitle">As of ${asOf} &middot; ${model} &middot; local research mode</div>
+      <h1>Bias Engine <span>市场偏见控制台</span></h1>
+      <div class="subtitle">数据截至 ${asOf} · 模型 ${model} · 特征集 ${featureSet} · 本地研究模式</div>
     </div>
     <div class="topbar-right">
       <div class="status-chip ${stale ? 'stale' : ''}">
         <div class="dot"></div>
-        ${stale ? 'DATA STALE' : 'LIVE'}
+        ${stale ? '数据过期' : '数据正常'}
       </div>
       <div class="status-chip">
         <div class="dot" style="background:var(--muted)"></div>
-        ${predictions.length} predictions
+        ${predictions.length} 条预测
       </div>
     </div>
   `;
 }
 
-// ── Render: Bias Matrix ──
+// ── 渲染：最强信号摘要 ──
+
+function renderHeroSummary(grouped) {
+  const el = document.getElementById('heroSummary');
+  const symbols = Object.keys(grouped);
+
+  let strongest = null;
+  let strongestScore = 0;
+  for (const symbol of symbols) {
+    for (const h of HORIZONS) {
+      const p = grouped[symbol][h];
+      if (p && Math.abs(p.bias_score) > Math.abs(strongestScore)) {
+        strongestScore = p.bias_score;
+        strongest = { symbol, horizon: h, ...p };
+      }
+    }
+  }
+
+  if (!strongest) { el.innerHTML = ''; return; }
+
+  const cls = getBiasClass(strongest.label);
+  const confPct = Math.round((strongest.confidence || 0) * 100);
+  el.innerHTML = `
+    <div class="hero-card ${cls}">
+      <div class="hero-label">最强信号</div>
+      <div class="hero-symbol">${strongest.symbol} <span style="font-size:0.7em;color:var(--muted)">${MARKET_TAGS[strongest.symbol] || ''}</span></div>
+      <div class="hero-score">${formatScore(strongest.bias_score)}</div>
+      <div class="hero-detail">${HORIZON_CN[strongest.horizon] || strongest.horizon} · ${labelCN(strongest.label)} · 置信度 ${confPct}%</div>
+    </div>
+  `;
+}
+
+// ── 渲染：偏见矩阵 ──
 
 function renderBiasMatrix(grouped) {
-  const el = document.getElementById('bias-matrix');
+  const el = document.getElementById('biasMatrix');
   const symbols = Object.keys(grouped);
 
   let html = '<div class="matrix-grid">';
-  // Header row
-  html += '<div class="matrix-header">Symbol</div>';
+  html += '<div class="matrix-header">标的</div>';
   for (const h of HORIZONS) {
-    html += `<div class="matrix-header">${h}</div>`;
+    html += `<div class="matrix-header">${HORIZON_CN[h] || h}</div>`;
   }
 
   for (const symbol of symbols) {
@@ -128,7 +165,7 @@ function renderBiasMatrix(grouped) {
     for (const h of HORIZONS) {
       const p = data[h];
       if (!p) {
-        html += '<div class="bias-cell is-neutral"><div class="score">--</div><div class="label">NO DATA</div></div>';
+        html += '<div class="bias-cell is-neutral"><div class="score">--</div><div class="label">无数据</div></div>';
         continue;
       }
       const cls = getBiasClass(p.label);
@@ -136,11 +173,11 @@ function renderBiasMatrix(grouped) {
       html += `
         <div class="bias-cell ${cls}">
           <div class="score">${formatScore(p.bias_score)}</div>
-          <div class="label">${(p.label || 'neutral').toUpperCase()}</div>
+          <div class="label">${labelCN(p.label)}</div>
           <div class="confidence-track">
             <div class="confidence-fill" data-width="${confPct}%" style="width:0"></div>
           </div>
-          <div style="font-size:0.68rem;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:2px">conf ${confPct}%</div>
+          <div style="font-size:0.68rem;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:2px">置信度 ${confPct}%</div>
         </div>
       `;
     }
@@ -149,7 +186,7 @@ function renderBiasMatrix(grouped) {
   html += '</div>';
   el.innerHTML = html;
 
-  // Animate confidence bars
+  // 置信度条动画
   requestAnimationFrame(() => {
     setTimeout(() => {
       el.querySelectorAll('.confidence-fill').forEach(bar => {
@@ -159,41 +196,42 @@ function renderBiasMatrix(grouped) {
   });
 }
 
-// ── Render: Conflict Board ──
+// ── 渲染：多周期冲突分析 ──
 
 function renderConflictBoard(grouped) {
-  const el = document.getElementById('conflict-board');
+  const el = document.getElementById('conflictBoard');
   const symbols = Object.keys(grouped);
   let html = '';
 
-  for (const symbol of symbols) {
+  for (let si = 0; si < symbols.length; si++) {
+    const symbol = symbols[si];
     const data = grouped[symbol];
     const hasConflict = detectConflict(data);
     const narrative = generateNarrative(data);
 
-    html += `<div class="conflict-card stagger-${symbols.indexOf(symbol) + 2}">`;
+    html += `<div class="conflict-card stagger-${si + 3}">`;
     html += `<div class="card-header">`;
-    html += `<div class="card-symbol">${symbol}</div>`;
-    html += `<div class="conflict-badge ${hasConflict ? 'has-conflict' : 'aligned'}">${hasConflict ? 'CONFLICT' : 'ALIGNED'}</div>`;
+    html += `<div class="card-symbol">${symbol} <span style="font-size:0.75em;color:var(--muted);font-weight:400">${MARKET_TAGS[symbol] || ''}</span></div>`;
+    html += `<div class="conflict-badge ${hasConflict ? 'has-conflict' : 'aligned'}">${hasConflict ? '方向冲突' : '方向一致'}</div>`;
     html += `</div>`;
 
-    // Timeline
+    // 时间轴
     html += '<div class="timeline">';
     for (let i = 0; i < HORIZONS.length; i++) {
       const h = HORIZONS[i];
       const p = data[h];
-      const label = p?.label || 'neutral';
-      const dotLabel = label === 'bullish' ? '▲' : label === 'bearish' ? '▼' : '●';
+      const lbl = p?.label || 'neutral';
+      const dotLabel = lbl === 'bullish' ? '▲' : lbl === 'bearish' ? '▼' : '●';
 
       html += `<div class="timeline-segment">`;
-      html += `<div class="timeline-dot ${label}">${dotLabel}</div>`;
-      html += `<div class="timeline-label">${h}</div>`;
+      html += `<div class="timeline-dot ${lbl}">${dotLabel}</div>`;
+      html += `<div class="timeline-label">${HORIZON_CN[h] || h}</div>`;
       html += `</div>`;
 
       if (i < HORIZONS.length - 1) {
         const nextH = HORIZONS[i + 1];
         const nextLabel = data[nextH]?.label || 'neutral';
-        const lineConflict = (label !== nextLabel && label !== 'neutral' && nextLabel !== 'neutral');
+        const lineConflict = (lbl !== nextLabel && lbl !== 'neutral' && nextLabel !== 'neutral');
         html += `<div class="timeline-line ${lineConflict ? 'conflict' : 'smooth'}"></div>`;
       }
     }
@@ -206,148 +244,88 @@ function renderConflictBoard(grouped) {
   el.innerHTML = html;
 }
 
-// ── Render: Factor Board ──
+// ── 渲染：数据质量面板 ──
 
-function renderFactorBoard(grouped) {
-  const el = document.getElementById('factor-board');
+function renderQualityBoard(quality, factorLatest, grouped) {
+  const el = document.getElementById('qualityBoard');
   const symbols = Object.keys(grouped);
   let html = '';
 
-  for (const symbol of symbols) {
-    const data = grouped[symbol];
-    // Use the horizon with highest confidence for factor display
-    let bestH = 'D1';
-    let bestConf = 0;
-    for (const h of HORIZONS) {
-      const conf = data[h]?.confidence || 0;
-      if (conf > bestConf) { bestConf = conf; bestH = h; }
-    }
-    const p = data[bestH];
-    if (!p) continue;
-
-    const posFactors = (p.top_positive_factors || []).slice(0, 5);
-    const negFactors = (p.top_negative_factors || []).slice(0, 5);
-    const allContribs = [...posFactors, ...negFactors].map(f => Math.abs(f.contribution || 0));
-    const maxContrib = Math.max(...allContribs, 0.001);
-
-    html += `<div class="factor-card stagger-${symbols.indexOf(symbol) + 3}">`;
-    html += `<div class="card-title">${symbol}</div>`;
-    html += `<div class="card-subtitle">${bestH} horizon &middot; bias ${formatScore(p.bias_score)} &middot; ${(p.label || '').toUpperCase()}</div>`;
-
-    if (posFactors.length) {
-      html += '<div class="factor-label">POSITIVE DRIVERS</div>';
-      for (const f of posFactors) {
-        const pct = Math.round((Math.abs(f.contribution) / maxContrib) * 100);
-        html += `
-          <div class="factor-row">
-            <div class="factor-name">${f.name}</div>
-            <div class="factor-bar-track"><div class="factor-bar-fill positive" style="width:${pct}%"></div></div>
-            <div class="factor-value" style="color:var(--bull)">${f.contribution >= 0 ? '+' : ''}${(f.contribution || 0).toFixed(4)}</div>
-          </div>`;
-      }
-    }
-
-    if (negFactors.length) {
-      html += '<div class="factor-label">NEGATIVE DRIVERS</div>';
-      for (const f of negFactors) {
-        const pct = Math.round((Math.abs(f.contribution) / maxContrib) * 100);
-        html += `
-          <div class="factor-row">
-            <div class="factor-name">${f.name}</div>
-            <div class="factor-bar-track"><div class="factor-bar-fill negative" style="width:${pct}%"></div></div>
-            <div class="factor-value" style="color:var(--bear)">${(f.contribution || 0).toFixed(4)}</div>
-          </div>`;
-      }
-    }
-
-    if (!posFactors.length && !negFactors.length) {
-      html += '<div style="color:var(--muted);font-size:0.82rem">No factor data available</div>';
-    }
-
-    html += '</div>';
-  }
-
-  el.innerHTML = html;
-}
-
-// ── Render: Quality Board ──
-
-function renderQualityBoard(quality, grouped) {
-  const el = document.getElementById('quality-board');
-  if (!quality || !quality.length) {
-    el.innerHTML = '<div style="color:var(--muted)">No factor quality data. Run: python scripts/export_visual_data.py</div>';
-    return;
-  }
-
-  // Aggregate quality per factor
-  const factorNames = [...new Set(quality.map(q => q.factor_name))].sort();
-  const avgCoverage = quality.reduce((s, q) => s + (q.coverage || 0), 0) / quality.length;
-  const maxExtreme = Math.max(...quality.map(q => q.extreme_share || 0));
-
-  let html = '';
-  // Summary card
-  const symbols = Object.keys(grouped);
+  // 每个标的健康卡片
   for (const symbol of symbols) {
     const data = grouped[symbol];
     const asOf = Object.values(data).find(p => p?.as_of)?.as_of;
     const stale = isStale(asOf);
     const health = stale ? 'warning' : 'healthy';
+    const predCount = HORIZONS.filter(h => data[h]).length;
 
     html += `<div class="quality-card">`;
     html += `<div class="card-header"><div class="card-symbol">${symbol}</div><div class="health-dot ${health}"></div></div>`;
-    html += `<div class="quality-metric"><span class="metric-label">Latest Date</span><span class="metric-value">${asOf || 'N/A'}</span></div>`;
-    html += `<div class="quality-metric"><span class="metric-label">Predictions</span><span class="metric-value">${HORIZONS.filter(h => data[h]).length} / 3</span></div>`;
+    html += `<div class="quality-metric"><span class="metric-label">最新日期</span><span class="metric-value">${asOf || '无'}</span></div>`;
+    html += `<div class="quality-metric"><span class="metric-label">预测数</span><span class="metric-value">${predCount} / 3</span></div>`;
+
+    if (factorLatest && factorLatest.length) {
+      const symFactors = factorLatest.filter(f => f.symbol === symbol);
+      if (symFactors.length) {
+        html += `<div class="quality-metric"><span class="metric-label">因子数</span><span class="metric-value">${symFactors.length}</span></div>`;
+      }
+    }
+
     html += '</div>';
   }
 
-  // Overall quality card
-  html += `<div class="quality-card">`;
-  html += `<div class="card-header"><div class="card-symbol">Factor Quality</div><div class="health-dot ${maxExtreme > 0.05 ? 'warning' : 'healthy'}"></div></div>`;
-  html += `<div class="quality-metric"><span class="metric-label">Factors</span><span class="metric-value">${factorNames.length}</span></div>`;
-  html += `<div class="quality-metric"><span class="metric-label">Avg Coverage</span><span class="metric-value ${avgCoverage >= 0.95 ? 'good' : avgCoverage >= 0.8 ? 'warn' : 'bad'}">${(avgCoverage * 100).toFixed(1)}%</span></div>`;
-  html += `<div class="quality-metric"><span class="metric-label">Max Extreme</span><span class="metric-value ${maxExtreme <= 0.01 ? 'good' : maxExtreme <= 0.05 ? 'warn' : 'bad'}">${(maxExtreme * 100).toFixed(2)}%</span></div>`;
-  html += '</div>';
+  // 因子质量汇总卡片
+  if (quality && quality.length) {
+    const avgCoverage = quality.reduce((s, q) => s + (q.coverage || 0), 0) / quality.length;
+    const maxExtreme = Math.max(...quality.map(q => q.extreme_share || 0));
+    const factorNames = [...new Set(quality.map(q => q.factor_name))];
+
+    html += `<div class="quality-card">`;
+    html += `<div class="card-header"><div class="card-symbol">因子质量</div><div class="health-dot ${maxExtreme > 0.05 ? 'warning' : 'healthy'}"></div></div>`;
+    html += `<div class="quality-metric"><span class="metric-label">因子总数</span><span class="metric-value">${factorNames.length}</span></div>`;
+    html += `<div class="quality-metric"><span class="metric-label">平均覆盖率</span><span class="metric-value ${avgCoverage >= 0.95 ? 'good' : avgCoverage >= 0.8 ? 'warn' : 'bad'}">${(avgCoverage * 100).toFixed(1)}%</span></div>`;
+    html += `<div class="quality-metric"><span class="metric-label">最大极值占比</span><span class="metric-value ${maxExtreme <= 0.01 ? 'good' : maxExtreme <= 0.05 ? 'warn' : 'bad'}">${(maxExtreme * 100).toFixed(2)}%</span></div>`;
+    html += '</div>';
+  }
+
+  if (!html) {
+    html = '<div style="color:var(--muted)">暂无质量数据。请运行: python scripts/export_visual_data.py</div>';
+  }
 
   el.innerHTML = html;
 }
 
-// ── Main ──
+// ── 主入口 ──
 
 async function main() {
   const loading = document.getElementById('loading');
 
-  // Load data (try pipeline output first, fallback to sample)
-  let predictions = await loadJson(DATA_PATHS.predictions);
-  if (!predictions || !predictions.length) {
-    predictions = await loadJson(DATA_PATHS.predictionsFallback);
-  }
-  let quality = await loadJson(DATA_PATHS.factorQuality);
-  if (!quality || !quality.length) {
-    quality = await loadJson(DATA_PATHS.factorQualityFallback);
-  }
+  const predictions = await loadJson(DATA_PATHS.predictions);
+  const quality = await loadJson(DATA_PATHS.factorQuality);
+  const factorLatest = await loadJson(DATA_PATHS.factorLatest);
 
   if (!predictions || !predictions.length) {
     loading.innerHTML = `
-      <div style="text-align:center;color:var(--muted)">
-        <p style="font-size:1.1rem;margin-bottom:12px">No prediction data found</p>
-        <p style="font-size:0.82rem;font-family:'JetBrains Mono',monospace">
-          Run: python run_pipeline.py --step all --start 2023-01-01<br>
-          Then: python scripts/export_visual_data.py
+      <div style="text-align:center;color:var(--muted);max-width:480px">
+        <p style="font-size:1.1rem;margin-bottom:16px">未找到预测数据</p>
+        <p style="font-size:0.82rem;font-family:'JetBrains Mono',monospace;line-height:2">
+          1. python run_pipeline.py --step all --start 2023-01-01<br>
+          2. python scripts/export_visual_data.py<br>
+          3. python -m http.server 8080 -d visual
         </p>
+        <p style="font-size:0.78rem;margin-top:12px">然后打开 <a href="http://localhost:8080" style="color:var(--bull)">http://localhost:8080</a></p>
       </div>`;
     return;
   }
 
   const grouped = groupPredictions(predictions);
 
-  // Render all sections
   renderTopbar(predictions);
+  renderHeroSummary(grouped);
   renderBiasMatrix(grouped);
   renderConflictBoard(grouped);
-  renderFactorBoard(grouped);
-  renderQualityBoard(quality, grouped);
+  renderQualityBoard(quality, factorLatest, grouped);
 
-  // Hide loading
   loading.classList.add('hidden');
   setTimeout(() => loading.remove(), 500);
 }

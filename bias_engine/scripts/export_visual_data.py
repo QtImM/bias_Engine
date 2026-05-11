@@ -30,9 +30,13 @@ VISUAL_DATA_DIR = PROJECT_ROOT / "visual" / "data"
 def export_predictions():
     path = DATA_DIR / "predictions" / "predictions.parquet"
     if not path.exists():
-        print(f"[WARN] {path} not found, skipping")
+        print(f"[ERROR] {path} not found.")
+        print("  Run pipeline first: python run_pipeline.py --step all --start 2023-01-01")
         return
     df = pd.read_parquet(path)
+    # Add feature_set_version if missing
+    if "feature_set_version" not in df.columns:
+        df["feature_set_version"] = "feature_set_v1"
     # Convert top_factors columns (may contain list-of-dicts or string)
     for col in ("top_positive_factors", "top_negative_factors"):
         if col in df.columns:

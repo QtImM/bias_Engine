@@ -3,47 +3,44 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Bias Engine — Market Regime Console</title>
+  <title>Bias Engine — 市场偏见控制台</title>
   <link rel="stylesheet" href="assets/style.css">
 </head>
 <body>
 
-  <!-- Loading overlay -->
+  <!-- 加载遮罩 -->
   <div class="loading-overlay" id="loading">
-    <div class="loading-text">INITIALIZING BIAS ENGINE...</div>
+    <div class="loading-text">正在初始化偏见引擎...</div>
   </div>
 
   <main class="shell">
-    <!-- 1. Topbar -->
+    <!-- 1. 顶部状态栏 -->
     <header class="topbar" id="topbar"></header>
 
-    <!-- 2. Bias Matrix -->
-    <section class="stagger-1">
-      <div class="section-title">Bias Matrix — D1 / W1 / M1</div>
-      <div id="bias-matrix"></div>
-    </section>
+    <!-- 2. 最强信号摘要 -->
+    <section id="heroSummary" class="hero-summary stagger-1"></section>
 
-    <!-- 3. Conflict Board -->
+    <!-- 3. 偏见矩阵 -->
     <section class="stagger-2">
-      <div class="section-title">Multi-Horizon Conflict Analysis</div>
-      <div class="conflict-board" id="conflict-board"></div>
+      <div class="section-title">偏见矩阵 — 日线 / 周线 / 月线</div>
+      <div id="biasMatrix"></div>
     </section>
 
-    <!-- 4. Factor Board -->
+    <!-- 4. 多周期冲突分析 -->
     <section class="stagger-3">
-      <div class="section-title">Factor Contributions — Top Drivers</div>
-      <div class="factor-board" id="factor-board"></div>
+      <div class="section-title">多周期冲突分析</div>
+      <div class="conflict-board" id="conflictBoard"></div>
     </section>
 
-    <!-- 5. Quality Board -->
+    <!-- 5. 数据质量面板 -->
     <section class="stagger-4">
-      <div class="section-title">Data Freshness & Quality</div>
-      <div class="quality-board" id="quality-board"></div>
+      <div class="section-title">数据新鲜度与质量</div>
+      <div class="quality-board" id="qualityBoard"></div>
     </section>
 
-    <!-- Footer -->
+    <!-- 底部 -->
     <footer class="footer">
-      <p>Bias Engine v1.0 &middot; Multi-Timeframe Market Bias Research System</p>
+      <p>Bias Engine v1.0 · 多时间框架市场偏见研究系统</p>
     </footer>
   </main>
 
