@@ -198,11 +198,25 @@ def step_report(predictions: pd.DataFrame) -> str:
     return report
 
 
+# ── Step 6: Evolution Review ──
+
+def step_evolution() -> dict:
+    """Generate controlled evolution candidates and review report."""
+    from src.evolution.runner import run_evolution_review
+
+    logger.info("=== Evolution Review ===")
+    result = run_evolution_review(DATA_DIR, max_candidates=3)
+    logger.info(f"Generated {result['candidate_count']} evolution candidates")
+    for key, path in result["report_paths"].items():
+        logger.info(f"  {key}: {path}")
+    return result
+
+
 # ── Main ──
 
 def main():
     parser = argparse.ArgumentParser(description="Multi-Timeframe Bias Engine Pipeline")
-    parser.add_argument("--step", choices=["ingest", "factors", "labels", "predict", "report", "all"],
+    parser.add_argument("--step", choices=["ingest", "factors", "labels", "predict", "report", "evolution", "all"],
                        default="all", help="Which step to run")
     parser.add_argument("--start", type=str, default="2023-01-01",
                        help="Start date for data (YYYY-MM-DD)")
@@ -243,6 +257,9 @@ def main():
         else:
             logger.error("No factor values found. Run factors step first.")
             return
+
+    if args.step in ("evolution", "all"):
+        step_evolution()
 
     if args.step in ("report", "all"):
         pred_path = DATA_DIR / "predictions" / "predictions.parquet"

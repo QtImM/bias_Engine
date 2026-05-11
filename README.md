@@ -240,11 +240,33 @@ http://localhost:8080
 
 注意：`scripts/export_visual_data.py` 和 `visual/index.html` 是下一步要实现的内容。
 
+## Evolution Loop v1
+
+项目下一阶段加入受控进化机制，用来生成 AI 可读、机器可解析的候选实验协议：
+
+```powershell
+cd bias_engine
+python run_pipeline.py --step evolution
+```
+
+它会读取因子质量报告，输出：
+
+```text
+data/evolution/evolution_candidates.json
+data/evolution/evolution_report.json
+data/evolution/evolution_report.md
+```
+
+其中 `evolution_candidates.json` 可以直接复制给 AI 阅读和拆解。但候选实验不是结论，是否有效只由严格的无未来函数 walk-forward / 回测量化结果判断。
+
+第一版不会自动修改模型配置，也不会自动晋级 champion。
+
 ## 重要文档
 
 ```text
 plan.txt
 docs/superpowers/plans/2026-05-11-bias-engine-open-source-evolution.md
+bias_engine/docs/evolution_loop_v1.md
 bias_engine/docs/open_source_selection.md
 bias_engine/docs/factor_lifecycle.md
 bias_engine/docs/local_html_visualization_steps.md

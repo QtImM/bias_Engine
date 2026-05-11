@@ -38,3 +38,16 @@ Example:
 ema_slope v1.0.0 = EMA20 five-day slope
 ema_slope v1.1.0 = EMA20 five-day slope divided by realized volatility
 ```
+
+## Evolution Review
+
+因子进入 champion 之前，应先通过 Evolution Loop 生成或记录候选实验。
+
+推荐顺序：
+
+1. 观察 `factor_quality.parquet`。
+2. 运行 `python run_pipeline.py --step evolution`。
+3. 阅读 `data/evolution/evolution_report.md`。
+4. 将候选实验复制为独立 experiment 配置。
+5. 用 walk-forward 和 promotion policy 比较 champion / challenger。
+6. 只有在没有明显退化时，才考虑 promote。
